@@ -5,6 +5,9 @@ ignore=results,data
 max-line-length=100
 
 [BASIC]
+# Тестові функції описуються своєю назвою (test_edge_is_preserved тощо),
+# тому докстрінги обов'язкові лише для функцій програми.
+no-docstring-rgx=^_|^test_
 # Короткі імена — стандартні математичні позначення у формулах обробки зображень.
 good-names=i,j,k,n,x,y,h,w,a,b,c,r,t,q,p,s,dx,dy,fh,gx,gy,cx,cy,fx,fy,wx,wy,x0,x1,y0,y1,ax,_
 
