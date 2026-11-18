@@ -1,0 +1,4 @@
+param,value,runs,clahe_contrast_gain,edges_f1_vs_clean,lines_recall_vs_clean,n_lines,time_s
+pipeline2.clahe.clip_limit,1.0,20,1.2708,0.9245,0.4927,8.05,0.1115
+pipeline2.clahe.clip_limit,2.0,20,1.5453,0.9351,0.4967,8.7,0.1264
+pipeline2.clahe.clip_limit,4.0,20,1.9168,0.9227,0.4591,10.0,0.1362

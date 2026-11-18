@@ -1,0 +1,4 @@
+param,value,runs,s1_psnr_gain,s1_ssim,seg_miou_vs_clean,time_s
+pipeline1.kuwahara.window,3,20,3.3124,0.765,0.5641,1.582
+pipeline1.kuwahara.window,5,20,2.7696,0.6875,0.567,1.5136
+pipeline1.kuwahara.window,7,20,1.6555,0.5723,0.6234,1.5865

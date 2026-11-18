@@ -1,0 +1,4 @@
+param,value,runs,clahe_contrast_gain,edges_f1_vs_clean,lines_recall_vs_clean,n_lines,time_s
+pipeline2.canny.sigma,1.0,20,1.5453,0.9156,0.4288,10.0,0.1437
+pipeline2.canny.sigma,1.4,20,1.5453,0.9351,0.4967,8.7,0.121
+pipeline2.canny.sigma,2.0,20,1.5453,0.9042,0.5844,5.15,0.0882
