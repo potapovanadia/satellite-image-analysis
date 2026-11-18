@@ -108,9 +108,23 @@ def write_table(rows, csv_path, json_path):
         json.dump(rows, fh, ensure_ascii=False, indent=2)
 
 
-def run_experiment(cfg, pipeline_names, input_dir=None, output_dir=None,
-                   noise_names=None, limit=None, log=print):
+def select_per_class(paths, root, per_class):
+    """Перші per_class зображень кожного класу (для швидких експериментів)."""
+    chosen, counts = [], {}
+    for path in paths:
+        cls = _class_of(path, root)
+        if counts.get(cls, 0) < per_class:
+            counts[cls] = counts.get(cls, 0) + 1
+            chosen.append(path)
+    return chosen
+
+
+def run_experiment(cfg, pipeline_names, input_dir=None, output_dir=None,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+                   noise_names=None, limit=None, log=print, per_class=None):
     """Обробляє всю вибірку обраними пайплайнами за всіх умов шуму.
+
+    Args:
+        per_class: якщо задано — брати лише перші N зображень кожного класу.
 
     Для кожного зображення спочатку виконується прогін без шуму (еталон),
     потім — із кожним видом шуму. Метрики кожного запуску пишуться у
@@ -127,6 +141,8 @@ def run_experiment(cfg, pipeline_names, input_dir=None, output_dir=None,
         noises = [{"name": "none", "type": "none"}] + noises
     save_noise = set(cfg["output"].get("save_noise", []))
     paths = list_images(root)
+    if per_class:
+        paths = select_per_class(paths, root, per_class)
     if limit:
         paths = paths[:limit]
     if not paths:

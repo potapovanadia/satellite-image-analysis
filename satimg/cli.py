@@ -6,6 +6,9 @@
     python -m satimg run --pipeline p1              # пайплайн №1 на всій вибірці
     python -m satimg run --pipeline all --limit 5   # обидва пайплайни, 5 знімків
     python -m satimg method canny --image data/dataset/freeway/freeway00.tif
+    python -m satimg verify                         # еталонні сценарії (C1)
+    python -m satimg analyze                        # таблиці та графіки порівняння
+    python -m satimg sweep --pipeline p1 --param pipeline1.kuwahara.window --values 3 5 7
 Будь-який параметр змінюється без правки коду:
     python -m satimg run --pipeline p1 --set pipeline1.kuwahara.window=5
 """
@@ -55,6 +58,7 @@ def build_parser():
     p_run.add_argument("--noise", nargs="+", metavar="НАЗВА",
                        help="лише вказані умови шуму (назви з конфігурації)")
     p_run.add_argument("--limit", type=int, help="обробити лише перші N зображень")
+    p_run.add_argument("--per-class", type=int, help="лише перші N зображень кожного класу")
 
     p_method = sub.add_parser("method", parents=[common],
                               help="застосувати один метод до одного зображення")
@@ -63,6 +67,23 @@ def build_parser():
     p_method.add_argument("--output", help="куди зберегти результат (PNG)")
     p_method.add_argument("--noise", help="назва умови шуму з конфігурації")
 
+    p_verify = sub.add_parser("verify", parents=[common],
+                              help="перевірка коректності за еталонними сценаріями (C1)")
+    p_verify.add_argument("--output", help="папка для результатів")
+
+    p_an = sub.add_parser("analyze", parents=[common],
+                          help="зведені таблиці та графіки за результатами run")
+    p_an.add_argument("--results", help="папка з metrics_*.csv")
+
+    p_sw = sub.add_parser("sweep", parents=[common],
+                          help="підбір параметра: порівняти кілька значень")
+    p_sw.add_argument("--param", required=True, help="напр. pipeline1.kuwahara.window")
+    p_sw.add_argument("--values", nargs="+", required=True, help="значення для перевірки")
+    p_sw.add_argument("--pipeline", choices=["p1", "p2"], required=True)
+    p_sw.add_argument("--noise", nargs="+", default=["none", "gaussian_20"],
+                      help="умови шуму (за замовчуванням none і gaussian_20)")
+    p_sw.add_argument("--per-class", type=int, default=4, help="знімків кожного класу")
+    p_sw.add_argument("--output", help="папка для результатів")
     return parser
 
 
@@ -94,7 +115,8 @@ def cmd_run(args, cfg):
         if name not in known:
             print(f"Невідома умова шуму: {name}. Доступні: {', '.join(sorted(known))}")
             return 2
-    rows = run_experiment(cfg, names, args.input, args.output, args.noise, args.limit)
+    rows = run_experiment(cfg, names, args.input, args.output, args.noise, args.limit,
+                          per_class=args.per_class)
     out = Path(args.output or cfg["output"]["dir"])
     for name, table in rows.items():
         print(f"{name}: {len(table)} запусків, метрики -> {out / f'metrics_{name}.csv'}")
@@ -120,6 +142,35 @@ def cmd_method(args, cfg):
                f"{Path(args.image).stem}_{args.name}.png")
     save_image(result, out)
     print(f"Збережено: {out}")
+    return 0
+
+
+@command("verify")
+def cmd_verify(args, cfg):
+    """Виконує еталонні сценарії перевірки коректності."""
+    from .verify import run_verification  # pylint: disable=import-outside-toplevel
+    _, share = run_verification(cfg, args.output)
+    return 0 if share > 0 else 1
+
+
+@command("analyze")
+def cmd_analyze(args, cfg):
+    """Будує зведені таблиці та графіки з метрик попереднього запуску."""
+    from .analysis import run_analysis  # pylint: disable=import-outside-toplevel
+    return 0 if run_analysis(args.results or cfg["output"]["dir"]) else 1
+
+
+@command("sweep")
+def cmd_sweep(args, cfg):
+    """Порівнює кілька значень одного параметра на частині вибірки."""
+    from .analysis import run_sweep  # pylint: disable=import-outside-toplevel
+    try:
+        apply_overrides(cfg, [f"{args.param}={args.values[0]}"])
+    except ConfigError as exc:
+        print(f"Помилка: {exc}")
+        return 2
+    run_sweep(cfg, args.param, args.values, args.pipeline, args.noise, args.per_class,
+              args.output or cfg["output"]["dir"])
     return 0
 
 
