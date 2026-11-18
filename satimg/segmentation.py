@@ -33,13 +33,13 @@ def kmeans(points, k, max_iter=30, tol=1e-4, seed=42, n_init=1):
     points = np.asarray(points, dtype=np.float64)
     rng = np.random.default_rng(seed)
     k = int(min(k, len(np.unique(points, axis=0))))
-    best = None
+    best_inertia, best_labels, best_centers = float("inf"), None, None
     for _ in range(max(1, int(n_init))):
         labels, centers = _lloyd(points, k, max_iter, tol, rng)
         inertia = float(np.sum((points - centers[labels]) ** 2))
-        if best is None or inertia < best[0]:
-            best = (inertia, labels, centers)
-    return best[1], best[2]
+        if inertia < best_inertia:
+            best_inertia, best_labels, best_centers = inertia, labels, centers
+    return best_labels, best_centers
 
 
 def _sq_distances(points, centers):

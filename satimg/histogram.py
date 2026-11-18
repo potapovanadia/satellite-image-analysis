@@ -59,20 +59,29 @@ def clahe(gray, tiles=(8, 8), clip_limit=2.0):
         for b in range(tx):
             maps[a, b] = tile_mapping(gray[ys[a]:ys[a + 1], xs[b]:xs[b + 1]], clip_limit)
 
-    # Координати пікселів у «системі центрів плиток».
-    cy = (ys[:-1] + ys[1:]) / 2.0
-    cx = (xs[:-1] + xs[1:]) / 2.0
-    fy = np.interp(np.arange(h) + 0.5, cy, np.arange(ty)) if ty > 1 else np.zeros(h)
-    fx = np.interp(np.arange(w) + 0.5, cx, np.arange(tx)) if tx > 1 else np.zeros(w)
-    y0 = np.floor(fy).astype(int)
-    x0 = np.floor(fx).astype(int)
-    y1 = np.minimum(y0 + 1, ty - 1)
-    x1 = np.minimum(x0 + 1, tx - 1)
-    wy = (fy - y0)[:, None]
-    wx = (fx - x0)[None, :]
-
-    yy0, xx0 = y0[:, None], x0[None, :]
-    yy1, xx1 = y1[:, None], x1[None, :]
-    top = (1 - wx) * maps[yy0, xx0, gray] + wx * maps[yy0, xx1, gray]
-    bottom = (1 - wx) * maps[yy1, xx0, gray] + wx * maps[yy1, xx1, gray]
+    y0, y1, wy = _interpolation_weights(ys)
+    x0, x1, wx = _interpolation_weights(xs)
+    y0, y1, wy = y0[:, None], y1[:, None], wy[:, None]
+    x0, x1, wx = x0[None, :], x1[None, :], wx[None, :]
+    top = (1 - wx) * maps[y0, x0, gray] + wx * maps[y0, x1, gray]
+    bottom = (1 - wx) * maps[y1, x0, gray] + wx * maps[y1, x1, gray]
     return (1 - wy) * top + wy * bottom
+
+
+def _interpolation_weights(edges):
+    """Сусідні плитки та ваги білінійної інтерполяції вздовж однієї осі.
+
+    Для кожного пікселя знаходить індекси двох найближчих центрів плиток
+    (i0, i1) і вагу другого з них (0..1). Біля країв зображення обидва
+    індекси збігаються, тобто використовується одна плитка.
+    """
+    count = len(edges) - 1
+    size = edges[-1]
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    if count > 1:
+        pos = np.interp(np.arange(size) + 0.5, centers, np.arange(count))
+    else:
+        pos = np.zeros(size)
+    i0 = np.floor(pos).astype(int)
+    i1 = np.minimum(i0 + 1, count - 1)
+    return i0, i1, pos - i0

@@ -76,7 +76,16 @@ def glcm_feature_maps(gray, window=9, levels=8, offsets=DEFAULT_OFFSETS):
     Returns:
         Масив (H, W, 4) з ознаками у порядку FEATURE_NAMES.
     """
-    q = quantize(gray, levels)
+    counts = _pair_count_maps(quantize(gray, levels), levels, offsets)
+    sums = box_sum(counts, window)
+    total = sums.sum(axis=0)
+    total[total == 0] = 1.0
+    return _haralick_maps(sums / total, levels)
+
+
+def _pair_count_maps(q, levels, offsets):
+    """Карти пар рівнів: counts[i * levels + j, y, x] — кількість пар (i, j),
+    що починаються в пікселі (y, x), за всіма зсувами (симетрично)."""
     h, w = q.shape
     counts = np.zeros((levels * levels, h, w), dtype=np.float64)
     rows, cols = np.indices((h, w))
@@ -85,25 +94,23 @@ def glcm_feature_maps(gray, window=9, levels=8, offsets=DEFAULT_OFFSETS):
         x0, x1 = max(0, -dx), min(w, w - dx)
         first = q[y0:y1, x0:x1]
         second = q[y0 + dy:y1 + dy, x0 + dx:x1 + dx]
-        r = rows[y0:y1, x0:x1]
-        c = cols[y0:y1, x0:x1]
-        np.add.at(counts, (first * levels + second, r, c), 1.0)
-        np.add.at(counts, (second * levels + first, r, c), 1.0)
+        where = (rows[y0:y1, x0:x1], cols[y0:y1, x0:x1])
+        np.add.at(counts, (first * levels + second, *where), 1.0)
+        np.add.at(counts, (second * levels + first, *where), 1.0)
+    return counts
 
-    sums = box_sum(counts, window)
-    total = sums.sum(axis=0)
-    total[total == 0] = 1.0
-    p = sums / total
 
+def _haralick_maps(p, levels):
+    """Ознаки Haralick для стосу нормованих GLCM p форми (levels^2, H, W)."""
     i, j = np.divmod(np.arange(levels * levels), levels)
     diff = (i - j).astype(np.float64)[:, None, None]
-    contrast = np.sum(diff ** 2 * p, axis=0)
-    energy = np.sum(p ** 2, axis=0)
-    homogeneity = np.sum(p / (1.0 + np.abs(diff)), axis=0)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        logp = np.where(p > 0, np.log2(np.where(p > 0, p, 1.0)), 0.0)
-    entropy = -np.sum(p * logp, axis=0)
-    return np.stack([contrast, energy, homogeneity, entropy], axis=-1)
+    logp = np.log2(np.where(p > 0, p, 1.0))  # для p = 0 доданок дорівнює 0
+    return np.stack([
+        np.sum(diff ** 2 * p, axis=0),                 # контраст
+        np.sum(p ** 2, axis=0),                        # енергія
+        np.sum(p / (1.0 + np.abs(diff)), axis=0),      # однорідність
+        -np.sum(p * logp, axis=0),                     # ентропія
+    ], axis=-1)
 
 
 def features_to_display(features):

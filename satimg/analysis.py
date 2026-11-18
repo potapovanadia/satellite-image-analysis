@@ -126,6 +126,75 @@ def _mean_by(rows, col, key="noise", order=None):
     return order, [stats([r[col] for r in groups.get((k,), [])])["mean"] for k in order]
 
 
+def _bar_values(ax, values):
+    """Підписи значень над стовпчиками."""
+    for i, val in enumerate(values):
+        ax.text(i, val, f"{val:.2f}", ha="center", va="bottom", fontsize=8, color=INK2)
+
+
+def _plot_p1(plt, p1_rows, save):
+    """Графіки пайплайна №1: якість фільтрації та приріст PSNR за класами."""
+    noisy = [n for n in NOISE_ORDER if n != "none"]
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.6))
+    x = np.arange(len(noisy))
+    for ax, (col_in, col_out, label) in zip(
+            axes, [("input_psnr", "s1_psnr", "PSNR, дБ"), ("input_ssim", "s1_ssim", "SSIM")]):
+        ax.bar(x - 0.2, _mean_by(p1_rows, col_in, order=noisy)[1], 0.38,
+               color=SERIES[0], label="зашумлений вхід")
+        ax.bar(x + 0.2, _mean_by(p1_rows, col_out, order=noisy)[1], 0.38,
+               color=SERIES[1], label="після Кувахари")
+        ax.set_xticks(x, [NOISE_LABELS[n] for n in noisy])
+        _style(ax, f"Пайплайн №1, стадія 1: {label}", label)
+        ax.legend(frameon=False, fontsize=8, labelcolor=INK2)
+    save(fig, "p1_denoise_quality.png")
+
+    g20 = [r for r in p1_rows if r["noise"] == "gaussian_20"]
+    classes, gains = _mean_by(g20, "s1_psnr_gain", key="class")
+    fig, ax = plt.subplots(figsize=(6.5, 3.4))
+    ax.bar(classes, gains, color=SERIES[0], width=0.6)
+    _bar_values(ax, gains)
+    _style(ax, "Приріст PSNR після Кувахари за класами (гаус σ=20)", "дБ")
+    save(fig, "p1_gain_by_class.png")
+
+
+def _plot_comparison(plt, p1_rows, p2_rows, save):
+    """Графіки порівняння пайплайнів: стійкість до шуму, за класами, час."""
+    series = [(p1_rows, "seg_miou_vs_clean", "П1: mIoU сегментації"),
+              (p2_rows, "edges_f1_vs_clean", "П2: F1 контурів"),
+              (p2_rows, "lines_recall_vs_clean", "П2: повнота прямих")]
+    fig, ax = plt.subplots(figsize=(7.5, 3.8))
+    for idx, (rows, col, label) in enumerate(series):
+        vals = _mean_by(rows, col, order=NOISE_ORDER)[1]
+        ax.plot(range(len(NOISE_ORDER)), vals, marker="o", linewidth=2, markersize=6,
+                color=SERIES[idx], label=label)
+        ax.annotate(label, (len(NOISE_ORDER) - 1, vals[-1]), xytext=(6, 0),
+                    textcoords="offset points", fontsize=8, color=INK2, va="center")
+    ax.set_xticks(range(len(NOISE_ORDER)), [NOISE_LABELS[n] for n in NOISE_ORDER])
+    ax.set_ylim(0, 1.05)
+    ax.set_xlim(-0.3, len(NOISE_ORDER) + 0.9)
+    _style(ax, "Стійкість результату до шуму (збіг з результатом на чистому знімку)",
+           "частка збігу")
+    ax.legend(frameon=False, fontsize=8, labelcolor=INK2, loc="lower left")
+    save(fig, "pipelines_stability.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.4), sharey=True)
+    for ax, (rows, col, label) in zip(axes, [series[0], series[2]]):
+        sub = [r for r in rows if r["noise"] == "gaussian_20"]
+        classes, vals = _mean_by(sub, col, key="class")
+        ax.bar(classes, vals, color=SERIES[0], width=0.6)
+        _bar_values(ax, vals)
+        ax.tick_params(axis="x", rotation=20)
+        _style(ax, f"{label} (гаус σ=20)", "частка збігу")
+    save(fig, "stability_by_class.png")
+
+    fig, ax = plt.subplots(figsize=(5, 3))
+    times = [stats([r["time_s"] for r in rows])["mean"] for rows in (p1_rows, p2_rows)]
+    ax.bar(["Пайплайн №1", "Пайплайн №2"], times, color=SERIES[0], width=0.5)
+    _bar_values(ax, times)
+    _style(ax, "Середній час обробки знімка 256×256, с", "секунди")
+    save(fig, "pipelines_time.png")
+
+
 def plot_all(p1_rows, p2_rows, out_dir):
     """Будує графіки для звіту (PNG) і повертає список файлів."""
     import matplotlib  # pylint: disable=import-outside-toplevel
@@ -134,7 +203,6 @@ def plot_all(p1_rows, p2_rows, out_dir):
 
     out_dir.mkdir(parents=True, exist_ok=True)
     files = []
-    noisy = [n for n in NOISE_ORDER if n != "none"]
 
     def save(fig, name):
         fig.patch.set_facecolor(SURFACE)
@@ -144,70 +212,9 @@ def plot_all(p1_rows, p2_rows, out_dir):
         files.append(out_dir / name)
 
     if p1_rows:
-        # 1. Якість фільтрації Кувахари: PSNR і SSIM до/після (дві окремі осі-панелі).
-        fig, axes = plt.subplots(1, 2, figsize=(10, 3.6))
-        x = np.arange(len(noisy))
-        for ax, (col_in, col_out, label) in zip(
-                axes, [("input_psnr", "s1_psnr", "PSNR, дБ"), ("input_ssim", "s1_ssim", "SSIM")]):
-            _, before = _mean_by(p1_rows, col_in, order=noisy)
-            _, after = _mean_by(p1_rows, col_out, order=noisy)
-            ax.bar(x - 0.2, before, 0.38, color=SERIES[0], label="зашумлений вхід")
-            ax.bar(x + 0.2, after, 0.38, color=SERIES[1], label="після Кувахари")
-            ax.set_xticks(x, [NOISE_LABELS[n] for n in noisy])
-            _style(ax, f"Пайплайн №1, стадія 1: {label}", label)
-            ax.legend(frameon=False, fontsize=8, labelcolor=INK2)
-        save(fig, "p1_denoise_quality.png")
-
-        # 2. Приріст PSNR за класами при гаусовому шумі σ=20.
-        g20 = [r for r in p1_rows if r["noise"] == "gaussian_20"]
-        classes, gains = _mean_by(g20, "s1_psnr_gain", key="class")
-        fig, ax = plt.subplots(figsize=(6.5, 3.4))
-        ax.bar(classes, gains, color=SERIES[0], width=0.6)
-        for i, val in enumerate(gains):
-            ax.text(i, val, f"{val:.2f}", ha="center", va="bottom", fontsize=8, color=INK2)
-        _style(ax, "Приріст PSNR після Кувахари за класами (гаус σ=20)", "дБ")
-        save(fig, "p1_gain_by_class.png")
-
+        _plot_p1(plt, p1_rows, save)
     if p1_rows and p2_rows:
-        # 3. Порівняння стійкості пайплайнів до шуму (одна шкала 0..1).
-        fig, ax = plt.subplots(figsize=(7.5, 3.8))
-        series = [(p1_rows, "seg_miou_vs_clean", "П1: mIoU сегментації"),
-                  (p2_rows, "edges_f1_vs_clean", "П2: F1 контурів"),
-                  (p2_rows, "lines_recall_vs_clean", "П2: повнота прямих")]
-        for idx, (rows, col, label) in enumerate(series):
-            _, vals = _mean_by(rows, col, order=NOISE_ORDER)
-            ax.plot(range(len(NOISE_ORDER)), vals, marker="o", linewidth=2, markersize=6,
-                    color=SERIES[idx], label=label)
-            ax.annotate(label, (len(NOISE_ORDER) - 1, vals[-1]), xytext=(6, 0),
-                        textcoords="offset points", fontsize=8, color=INK2, va="center")
-        ax.set_xticks(range(len(NOISE_ORDER)), [NOISE_LABELS[n] for n in NOISE_ORDER])
-        ax.set_ylim(0, 1.05)
-        ax.set_xlim(-0.3, len(NOISE_ORDER) + 0.9)
-        _style(ax, "Стійкість результату до шуму (збіг з результатом на чистому знімку)",
-               "частка збігу")
-        ax.legend(frameon=False, fontsize=8, labelcolor=INK2, loc="lower left")
-        save(fig, "pipelines_stability.png")
-
-        # 4. Стійкість за класами при σ=20: окремо для кожного пайплайна (small multiples).
-        fig, axes = plt.subplots(1, 2, figsize=(10, 3.4), sharey=True)
-        for ax, (rows, col, label) in zip(axes, [series[0], series[2]]):
-            sub = [r for r in rows if r["noise"] == "gaussian_20"]
-            classes, vals = _mean_by(sub, col, key="class")
-            ax.bar(classes, vals, color=SERIES[0], width=0.6)
-            for i, val in enumerate(vals):
-                ax.text(i, val, f"{val:.2f}", ha="center", va="bottom", fontsize=8, color=INK2)
-            ax.tick_params(axis="x", rotation=20)
-            _style(ax, f"{label} (гаус σ=20)", "частка збігу")
-        save(fig, "stability_by_class.png")
-
-        # 5. Середній час обробки одного знімка.
-        fig, ax = plt.subplots(figsize=(5, 3))
-        times = [stats([r["time_s"] for r in rows])["mean"] for rows in (p1_rows, p2_rows)]
-        ax.bar(["Пайплайн №1", "Пайплайн №2"], times, color=SERIES[0], width=0.5)
-        for i, val in enumerate(times):
-            ax.text(i, val, f"{val:.2f} с", ha="center", va="bottom", fontsize=8, color=INK2)
-        _style(ax, "Середній час обробки знімка 256×256", "секунди")
-        save(fig, "pipelines_time.png")
+        _plot_comparison(plt, p1_rows, p2_rows, save)
     return files
 
 

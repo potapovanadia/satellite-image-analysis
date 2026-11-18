@@ -100,8 +100,8 @@ def run_pipeline2(img, params, seed=42):  # pylint: disable=unused-argument
         voting, theta_step=float(hp["theta_step"]), rho_step=float(hp["rho_step"]),
         threshold=float(hp["threshold"]),
         min_votes=int(round(float(hp["min_votes_frac"]) * min(img.shape[:2]))),
-        num_peaks=int(hp["num_peaks"]), nms_rho=int(hp["nms_rho"]),
-        nms_theta=int(hp["nms_theta"]), rho_window=int(hp.get("rho_window", 3)))
+        num_peaks=int(hp["num_peaks"]), nms=(int(hp["nms_rho"]), int(hp["nms_theta"])),
+        rho_window=int(hp.get("rho_window", 3)))
     overlay = hough.draw_lines(img, lines, color=(255, 0, 0), thickness=1)
     results.append(StageResult("04_hough", "перетворення Хафа", lines, overlay,
                                extra={"n_lines": len(lines)}))

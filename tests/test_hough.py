@@ -4,7 +4,7 @@ import numpy as np
 from satimg.hough import (find_lines, hough_accumulator, hough_lines, line_mask,
                           match_lines)
 
-PEAKS = {"threshold": 0.5, "min_votes": 3, "num_peaks": 1, "nms_rho": 2, "nms_theta": 5}
+PEAKS = {"threshold": 0.5, "min_votes": 3, "num_peaks": 1, "nms": (2, 5)}
 
 
 def test_vertical_line_accumulator_by_hand():

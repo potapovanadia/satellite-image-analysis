@@ -45,12 +45,12 @@ def merge_rho_bins(acc, rho_window=3):
 
 
 def find_lines(acc, rhos, thetas, threshold=0.5, min_votes=30, num_peaks=10,
-               nms_rho=10, nms_theta=10, rho_window=3):
+               nms=(10, 10), rho_window=3):
     """Пошук піків акумулятора з придушенням сусідніх піків.
 
     Спершу голоси сусідніх rho об'єднуються (merge_rho_bins). Пік
     приймається, якщо голосів >= max(min_votes, threshold * максимум).
-    Після вибору піку його околиця (nms_rho x nms_theta комірок, з
+    Після вибору піку його околиця (nms = (по rho, по theta) комірок, з
     урахуванням циклічності theta) обнуляється, щоб одна пряма не давала
     кілька майже однакових ліній. rho піку уточнюється як зважене
     середнє по вікну rho_window.
@@ -64,29 +64,41 @@ def find_lines(acc, rhos, thetas, threshold=0.5, min_votes=30, num_peaks=10,
     if work.max() <= 0:
         return []
     limit = max(min_votes, threshold * work.max())
-    n_rho, n_theta = work.shape
     lines = []
     while len(lines) < num_peaks:
-        idx = np.argmax(work)
-        r, t = np.unravel_index(idx, work.shape)
+        r, t = divmod(int(np.argmax(work)), work.shape[1])
         votes = work[r, t]
         if votes < limit:
             break
-        lo, hi = max(0, r - rho_window // 2), min(n_rho, r + rho_window // 2 + 1)
-        col = acc[lo:hi, t].astype(np.float64)
-        rho = float(np.sum(rhos[lo:hi] * col) / col.sum()) if col.sum() else float(rhos[r])
-        lines.append((round(rho, 2), float(thetas[t]), int(votes)))
-        r0, r1 = max(0, r - nms_rho), min(n_rho, r + nms_rho + 1)
-        for dt in range(-nms_theta, nms_theta + 1):
-            tt = t + dt
-            if 0 <= tt < n_theta:
-                work[r0:r1, tt] = 0
-            else:
-                # theta циклічна: (rho, theta) = (-rho, theta -+ 180).
-                tt %= n_theta
-                rr = n_rho - 1 - r
-                work[max(0, rr - nms_rho):min(n_rho, rr + nms_rho + 1), tt] = 0
+        lines.append((_refine_rho(acc[:, t], rhos, r, rho_window), float(thetas[t]), int(votes)))
+        _suppress(work, r, t, nms)
     return lines
+
+
+def _refine_rho(column, rhos, r, rho_window):
+    """Уточнює rho піку як середнє rho сусідніх комірок, зважене голосами."""
+    lo = max(0, r - rho_window // 2)
+    hi = min(len(rhos), r + rho_window // 2 + 1)
+    votes = column[lo:hi].astype(np.float64)
+    if votes.sum() == 0:
+        return float(rhos[r])
+    return round(float(np.sum(rhos[lo:hi] * votes) / votes.sum()), 2)
+
+
+def _suppress(work, r, t, nms):
+    """Обнуляє околицю піку (r, t) розміром nms = (по rho, по theta) комірок.
+
+    theta циклічна: пряма (rho, theta) збігається з (-rho, theta -+ 180),
+    тому за межами діапазону theta обнуляється дзеркальна комірка rho.
+    """
+    n_rho, n_theta = work.shape
+    nms_rho, nms_theta = nms
+    for dt in range(-nms_theta, nms_theta + 1):
+        tt, rr = t + dt, r
+        if not 0 <= tt < n_theta:
+            tt %= n_theta
+            rr = n_rho - 1 - r
+        work[max(0, rr - nms_rho):min(n_rho, rr + nms_rho + 1), tt] = 0
 
 
 def hough_lines(mask, theta_step=1.0, rho_step=1.0, **peak_params):
@@ -146,14 +158,14 @@ def match_lines(found, expected, angle_tol=2.0, rho_tol=3.0):
     used = set()
     errors = []
     for exp in expected:
-        best, best_err = None, None
+        best, best_score, best_err = None, float("inf"), (0.0, 0.0)
         for idx, cand in enumerate(found):
             if idx in used:
                 continue
             d_rho, d_theta = line_distance(cand, exp)
-            if d_rho <= rho_tol and d_theta <= angle_tol:
-                if best_err is None or d_theta + d_rho / 10 < best_err[1] + best_err[0] / 10:
-                    best, best_err = idx, (d_rho, d_theta)
+            score = d_theta + d_rho / 10.0
+            if d_rho <= rho_tol and d_theta <= angle_tol and score < best_score:
+                best, best_score, best_err = idx, score, (d_rho, d_theta)
         if best is not None:
             used.add(best)
             errors.append(best_err)
