@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Результати запусків (генеруються програмою)
+results/
+
+# Системні файли
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
