@@ -42,24 +42,35 @@ def kmeans(points, k, max_iter=30, tol=1e-4, seed=42, n_init=1):
     return best[1], best[2]
 
 
+def _sq_distances(points, centers):
+    """Квадрати відстаней від кожної точки до кожного центру, масив (N, k).
+
+    Використано тотожність |x - c|^2 = |x|^2 - 2 x·c + |c|^2: множення
+    матриць працює значно швидше, ніж явне віднімання для кожної пари.
+    """
+    d2 = ((points ** 2).sum(axis=1)[:, None] - 2.0 * points @ centers.T
+          + (centers ** 2).sum(axis=1)[None, :])
+    return np.maximum(d2, 0.0)
+
+
 def _lloyd(points, k, max_iter, tol, rng):
     """Один запуск k-means: ініціалізація k-means++ та ітерації Ллойда."""
     n = points.shape[0]
-    centers = [points[rng.integers(n)]]
+    centers = points[[rng.integers(n)]]
     for _ in range(1, k):
-        d2 = np.min(((points[:, None, :] - np.array(centers)[None]) ** 2).sum(-1), axis=1)
+        d2 = _sq_distances(points, centers).min(axis=1)
         probs = d2 / d2.sum() if d2.sum() > 0 else np.full(n, 1.0 / n)
-        centers.append(points[rng.choice(n, p=probs)])
-    centers = np.array(centers)
+        centers = np.vstack([centers, points[rng.choice(n, p=probs)]])
 
     labels = np.zeros(n, dtype=np.int64)
     for _ in range(max_iter):
-        dist = ((points[:, None, :] - centers[None]) ** 2).sum(-1)
-        labels = np.argmin(dist, axis=1)
-        new_centers = np.array([
-            points[labels == c].mean(axis=0) if np.any(labels == c) else centers[c]
-            for c in range(k)
-        ])
+        labels = np.argmin(_sq_distances(points, centers), axis=1)
+        counts = np.bincount(labels, minlength=k).astype(np.float64)
+        sums = np.stack([np.bincount(labels, weights=points[:, d], minlength=k)
+                         for d in range(points.shape[1])], axis=1)
+        # Порожній кластер (без точок) зберігає попередній центр.
+        new_centers = np.where(counts[:, None] > 0,
+                               sums / np.maximum(counts, 1.0)[:, None], centers)
         shift = np.max(np.abs(new_centers - centers))
         centers = new_centers
         if shift <= tol:
@@ -71,8 +82,13 @@ def standardize(features):
     """Z-нормалізація кожної ознаки (середнє 0, стандартне відхилення 1)."""
     mean = features.mean(axis=0)
     std = features.std(axis=0)
-    std[std == 0] = 1.0
-    return (features - mean) / std
+    # Майже стала ознака (різниця лише через похибки округлення) не
+    # повинна «роздуватись» до одиничної дисперсії — обнуляємо її.
+    constant = std < 1e-9
+    std[constant] = 1.0
+    out = (features - mean) / std
+    out[:, constant] = 0.0
+    return out
 
 
 def segment_kmeans(feature_map, k=4, max_iter=30, tol=1e-4, seed=42, weights=None,
