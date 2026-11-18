@@ -8,6 +8,7 @@ from satimg.morphology import (closing, connected_components, dilate, erode,
 
 
 def point():
+          """Бінарне зображення 5x5 з одним білим пікселем у центрі."""
     m = np.zeros((5, 5), dtype=bool)
     m[2, 2] = True
     return m
