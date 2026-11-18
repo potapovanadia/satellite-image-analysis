@@ -3,12 +3,14 @@
 Приклади:
     python -m satimg config
     python -m satimg config --set pipeline1.kuwahara.window=7
+    python -m satimg dataset
 """
 import argparse
 
 import yaml
 
 from .config import ConfigError, apply_overrides, load_config
+from .dataset import build_manifest
 
 
 def build_parser():
@@ -22,7 +24,21 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("config", parents=[common],
                    help="показати конфігурацію з урахуванням --set")
+    p_data = sub.add_parser("dataset", parents=[common],
+                            help="перевірити вибірку і створити data/manifest.csv")
+    p_data.add_argument("--input", help="папка з вибіркою (за замовчуванням з конфігурації)")
+    p_data.add_argument("--manifest", default="data/manifest.csv", help="куди записати опис")
     return parser
+
+
+def cmd_dataset(args, cfg):
+    """Команда dataset: перевірка всіх файлів вибірки та опис у CSV."""
+    root = args.input or cfg["data"]["input_dir"]
+    ok, per_class, bad = build_manifest(root, args.manifest)
+    for cls, count in sorted(per_class.items()):
+        print(f"  {cls}: {count}")
+    print(f"Коректних зображень: {ok}, пошкоджених: {bad}. Опис: {args.manifest}")
+    return 0 if ok else 1
 
 
 def main(argv=None):
@@ -35,4 +51,7 @@ def main(argv=None):
         return 2
     if args.command == "config":
         print(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
+        return 0
+    if args.command == "dataset":
+        return cmd_dataset(args, cfg)
     return 0
