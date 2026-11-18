@@ -1,0 +1,16 @@
+[MAIN]
+ignore=results,data
+
+[FORMAT]
+max-line-length=100
+
+[BASIC]
+# Короткі імена — стандартні математичні позначення у формулах обробки зображень.
+good-names=i,j,k,n,x,y,h,w,a,b,c,r,t,q,p,s,dx,dy,fh,gx,gy,cx,cy,fx,fy,wx,wy,x0,x1,y0,y1,ax,_
+
+[DESIGN]
+max-args=8
+max-positional-arguments=8
+max-locals=25
+max-branches=15
+max-statements=60
